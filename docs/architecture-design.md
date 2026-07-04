@@ -1,4 +1,9 @@
-# Cluo Vision 整体架构设计
+# Cluo Vision 整体架构设计（历史草案）
+
+> 此文档为 v1 历史草案，包含若干未验证假设（例如固定 Yamby 深链、旧 Jellyseerr 命名、过细的资源站清单）。
+> 当前开发与实现请以 [architecture-design-v2.md](architecture-design-v2.md) 为准。
+
+---
 
 > 版本: v1.0 | 日期: 2026-07-05 | 状态: 草案
 
