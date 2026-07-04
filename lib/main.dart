@@ -628,9 +628,19 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      _PrimaryAction(
-                        label: "重试入库",
-                        onPressed: () => _run(_importCompletedDownloads),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _SecondaryAction(
+                            label: "运行后台入库",
+                            onPressed: () => _run(_runDownloadImportAutomation),
+                          ),
+                          _PrimaryAction(
+                            label: "重试入库",
+                            onPressed: () => _run(_importCompletedDownloads),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1608,6 +1618,26 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _runDownloadImportAutomation() async {
+    final result = await _api.runDownloadImportAutomation();
+    final attempted = intValue(result["attempted"]);
+    final imported = intValue(result["imported"]);
+    final pending = intValue(result["pending"]);
+    final failed = intValue(result["failed"]);
+    final skipped = intValue(result["skipped"]);
+    final synced = intValue(result["synced"]);
+    await Future.wait([
+      _loadDownloads(autoImport: false),
+      _loadLibrary(),
+      _loadHome(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _status =
+          "后台入库执行：尝试 $attempted，已入库 $imported，等待 $pending，失败 $failed，跳过 $skipped，同步 $synced 条";
+    });
+  }
+
   Future<void> _loadLibrary() async {
     final result = await _api.libraryItems();
     setState(
@@ -1881,6 +1911,9 @@ class CluoApi {
 
   Future<Map<String, dynamic>> importCompletedDownloads() =>
       post("/api/downloads/import-completed", null);
+
+  Future<Map<String, dynamic>> runDownloadImportAutomation() =>
+      post("/api/automation/download-import/run", null);
 
   Future<Map<String, dynamic>> libraryItems({int limit = 100}) =>
       get("/api/library/items?limit=$limit");

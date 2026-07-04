@@ -79,6 +79,10 @@ void main() {
       expect(
           MediaItem.fromJson(listOf(batchImport["items"]).first).id, media.id);
 
+      final automation = await api.runDownloadImportAutomation();
+      expect(automation["attempted"], 1);
+      expect(automation["imported"], 1);
+
       expect(
         MediaItem.fromJson(listOf((await api.libraryItems())["items"]).first)
             .id,
@@ -141,6 +145,7 @@ void main() {
               "GET /api/discover/search?q=%E8%BF%B7%E5%AE%AB+%E9%A5%AD&limit=12"));
       expect(seen, contains("POST /api/downloads/task%201/pause"));
       expect(seen, contains("POST /api/downloads/import-completed"));
+      expect(seen, contains("POST /api/automation/download-import/run"));
       expect(seen, contains("PATCH /api/playback/sessions/session%201"));
     } finally {
       await server.close(force: true);
@@ -286,6 +291,31 @@ Future<void> _handleContractRequest(
           "message": "Local media item already exists.",
         }
       ],
+    });
+    return;
+  }
+
+  if (_matches(segments, ["api", "automation", "download-import", "run"])) {
+    await _writeJson(request, {
+      "checkedAt": "2026-07-05T00:00:00.000Z",
+      "totalCompleted": 1,
+      "attempted": 1,
+      "imported": 1,
+      "pending": 0,
+      "failed": 0,
+      "synced": 1,
+      "skipped": 0,
+      "results": [
+        {
+          "configured": false,
+          "status": "local-only",
+          "synced": 1,
+          "items": [_mediaItem()],
+          "searchTerms": ["迷宫饭"],
+          "message": "Local media item already exists.",
+        }
+      ],
+      "errors": [],
     });
     return;
   }
