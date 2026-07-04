@@ -967,6 +967,32 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
                 style: const TextStyle(color: Color(0xffffc66d)),
               ),
             ),
+          if (handlers.urlHandlers.isNotEmpty)
+            _playbackHandlerList("URL 处理器", handlers.urlHandlers),
+          if (handlers.intentHandlers.isNotEmpty)
+            _playbackHandlerList("Intent 处理器", handlers.intentHandlers),
+        ],
+      ),
+    );
+  }
+
+  Widget _playbackHandlerList(String label, List<String> handlers) {
+    return SizedBox(
+      width: 360,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Color(0xff8aa0a6), fontSize: 14),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            handlers.join("\n"),
+            maxLines: 8,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, height: 1.35),
+          ),
         ],
       ),
     );
@@ -2494,6 +2520,8 @@ class PlaybackHandlerDiagnostics {
     required this.canHandleIntentUri,
     required this.urlHandlerCount,
     required this.intentHandlerCount,
+    required this.urlHandlers,
+    required this.intentHandlers,
     this.message,
   });
 
@@ -2508,6 +2536,8 @@ class PlaybackHandlerDiagnostics {
         canHandleIntentUri: boolValue(data["canHandleIntentUri"]),
         urlHandlerCount: intValue(data["urlHandlerCount"]),
         intentHandlerCount: intValue(data["intentHandlerCount"]),
+        urlHandlers: listOfStrings(data["urlHandlers"]),
+        intentHandlers: listOfStrings(data["intentHandlers"]),
         message: nullIfBlank(stringValue(data["message"])),
       );
     }
@@ -2519,6 +2549,8 @@ class PlaybackHandlerDiagnostics {
       canHandleIntentUri: false,
       urlHandlerCount: 0,
       intentHandlerCount: 0,
+      urlHandlers: [],
+      intentHandlers: [],
       message: "平台检测返回无效",
     );
   }
@@ -2534,6 +2566,8 @@ class PlaybackHandlerDiagnostics {
       canHandleIntentUri: false,
       urlHandlerCount: 0,
       intentHandlerCount: 0,
+      urlHandlers: const [],
+      intentHandlers: const [],
       message: "当前平台尚未接入 Android 播放器检测桥接",
     );
   }
@@ -2545,6 +2579,8 @@ class PlaybackHandlerDiagnostics {
   final bool canHandleIntentUri;
   final int urlHandlerCount;
   final int intentHandlerCount;
+  final List<String> urlHandlers;
+  final List<String> intentHandlers;
   final String? message;
 
   String get summary {
@@ -2612,6 +2648,8 @@ class PlaybackLauncher {
         canHandleIntentUri: false,
         urlHandlerCount: 0,
         intentHandlerCount: 0,
+        urlHandlers: const [],
+        intentHandlers: const [],
         message: "播放器检测失败：${error.message ?? error.code}",
       );
     }

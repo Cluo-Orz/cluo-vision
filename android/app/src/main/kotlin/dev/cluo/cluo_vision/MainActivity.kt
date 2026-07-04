@@ -72,6 +72,8 @@ class MainActivity : FlutterActivity() {
                                     "canHandleIntentUri" to canHandleIntentUri(intentUri),
                                     "urlHandlerCount" to countUrlHandlers(url, mimeType),
                                     "intentHandlerCount" to countIntentHandlers(intentUri),
+                                    "urlHandlers" to listUrlHandlers(url, mimeType),
+                                    "intentHandlers" to listIntentHandlers(intentUri),
                                 )
                             )
                         } catch (error: Exception) {
@@ -84,6 +86,8 @@ class MainActivity : FlutterActivity() {
                                     "canHandleIntentUri" to false,
                                     "urlHandlerCount" to 0,
                                     "intentHandlerCount" to 0,
+                                    "urlHandlers" to emptyList<String>(),
+                                    "intentHandlers" to emptyList<String>(),
                                     "message" to "播放器检测失败：${error.message}",
                                 )
                             )
@@ -120,7 +124,7 @@ class MainActivity : FlutterActivity() {
 
     private fun countUrlHandlers(url: String?, mimeType: String): Int {
         val intent = buildUrlIntent(url, mimeType, null) ?: return 0
-        return queryIntentActivities(intent)
+        return queryIntentActivityNames(intent).size
     }
 
     private fun canHandleIntentUri(intentUri: String?): Boolean {
@@ -130,7 +134,17 @@ class MainActivity : FlutterActivity() {
 
     private fun countIntentHandlers(intentUri: String?): Int {
         val intent = parseIntentUri(intentUri) ?: return 0
-        return queryIntentActivities(intent)
+        return queryIntentActivityNames(intent).size
+    }
+
+    private fun listUrlHandlers(url: String?, mimeType: String): List<String> {
+        val intent = buildUrlIntent(url, mimeType, null) ?: return emptyList()
+        return queryIntentActivityNames(intent)
+    }
+
+    private fun listIntentHandlers(intentUri: String?): List<String> {
+        val intent = parseIntentUri(intentUri) ?: return emptyList()
+        return queryIntentActivityNames(intent)
     }
 
     private fun buildUrlIntent(url: String?, mimeType: String, packageName: String?): Intent? {
@@ -149,15 +163,24 @@ class MainActivity : FlutterActivity() {
             .addCategory(Intent.CATEGORY_DEFAULT)
     }
 
-    private fun queryIntentActivities(intent: Intent): Int {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    private fun queryIntentActivityNames(intent: Intent): List<String> {
+        val activities = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.queryIntentActivities(
                 intent,
                 PackageManager.ResolveInfoFlags.of(0),
-            ).size
+            )
         } else {
             @Suppress("DEPRECATION")
-            packageManager.queryIntentActivities(intent, 0).size
+            packageManager.queryIntentActivities(intent, 0)
         }
+        return activities
+            .mapNotNull { info ->
+                val activity = info.activityInfo ?: return@mapNotNull null
+                val packageName = activity.packageName ?: return@mapNotNull null
+                val name = activity.name ?: return@mapNotNull packageName
+                if (name.isBlank()) packageName else "$packageName/$name"
+            }
+            .distinct()
+            .take(8)
     }
 }

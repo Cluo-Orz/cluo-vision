@@ -117,6 +117,8 @@ void main() {
       "canHandleIntentUri": true,
       "urlHandlerCount": 1,
       "intentHandlerCount": 1,
+      "urlHandlers": ["com.hush.yamby/.PlayerActivity"],
+      "intentHandlers": ["com.hush.yamby/.PlayerActivity"],
     });
     final missing = PlaybackHandlerDiagnostics.fromPlatform({
       "platform": "android",
@@ -129,7 +131,10 @@ void main() {
     });
 
     expect(ready.summary, "播放器检测通过");
+    expect(ready.urlHandlers, ["com.hush.yamby/.PlayerActivity"]);
+    expect(ready.intentHandlers, ["com.hush.yamby/.PlayerActivity"]);
     expect(missing.summary, "未检测到播放器包：com.hush.yamby");
+    expect(missing.urlHandlers, isEmpty);
   });
 
   test("DownloadTask exposes local-dev completion capability", () {
