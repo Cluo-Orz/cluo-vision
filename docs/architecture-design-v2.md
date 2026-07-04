@@ -1,8 +1,8 @@
 # Cluo Vision 落地架构设计
 
-> 版本: v2.0  
-> 日期: 2026-07-05  
-> 状态: 调研后设计草案  
+> 版本: v2.0
+> 日期: 2026-07-05
+> 状态: 落地设计 + 当前实现基线
 > 需求源: `docs/project-goals.md`
 
 ---
@@ -40,7 +40,7 @@
 
 Cluo Vision 应定位为本地媒体系统的 **BFF + TV/手机统一 UI**，而不是播放器、下载器或资源站爬虫。
 
-推荐架构:
+推荐架构分两层：P0 先保证番剧主链路稳定；电影/剧集的 Seerr/Arr/Prowlarr 继续作为 P1 候选，不再写成当前必选前提。
 
 ```text
 Android TV / Mobile App
@@ -48,13 +48,14 @@ Android TV / Mobile App
         v
 cluo-server (本地 BFF, 统一认证、聚合 API、隐藏服务密钥)
         |
-        +-- Jellyfin: 已入库媒体、元数据、播放历史、收藏
-        +-- Seerr: 影片/剧集发现与请求
-        +-- Sonarr/Radarr: 剧集/电影自动下载与归档
-        +-- Prowlarr: 用户配置的索引源管理
-        +-- qBittorrent: 下载队列与进度
-        +-- AutoBangumi: 动漫 RSS 追番与重命名
-        +-- Bazarr: 字幕管理
+        +-- P0 Jellyfin: 已入库媒体、元数据、播放历史、收藏、播放流
+        +-- P0 AutoBangumi: 动漫搜索、RSS 订阅、追番规则、动漫下载状态
+        +-- P0 qBittorrent: 下载队列与暂停/恢复控制
+        +-- P0 Playback Provider: local-dev / Jellyfin stream-url / Android external-player
+        +-- P1 Seerr: 影片/剧集发现与请求
+        +-- P1 Sonarr/Radarr: 剧集/电影自动下载与归档
+        +-- P1 Prowlarr: 用户配置的索引源管理
+        +-- P1 Bazarr: 字幕管理
         |
         v
 Playback Provider (可插拔播放策略)
@@ -65,8 +66,22 @@ Playback Provider (可插拔播放策略)
 1. App 不直接保存 Sonarr/Radarr/qBittorrent/Prowlarr 的密钥。
 2. App 不实现站点爬虫，不内置具体资源站规则。
 3. 播放能力先通过 POC 决策，不能把未验证的 Intent 深链写成既定事实。
-4. 下载自动化优先走 Seerr + Sonarr/Radarr + Prowlarr；动漫走 AutoBangumi；手动种子/磁力只做高级补充。
+4. P0 下载自动化先走 AutoBangumi + qBittorrent + Jellyfin 入库；Seerr + Sonarr/Radarr + Prowlarr 在本项目里仍需真实环境验证后再升级为主路径。
 5. 本地已入库媒体的浏览和播放不依赖公网；新内容发现、索引搜索、RSS 更新自然需要公网。
+
+当前实现已经完成并本地验证的主链路：
+
+```text
+注册/登录
+  -> 统一发现搜索
+  -> AutoBangumi/local-dev 番剧结果
+  -> 订阅并生成下载任务
+  -> 下载状态/暂停/恢复/完成
+  -> 自动或手动入 Jellyfin/本地媒体库
+  -> 媒体库筛选/详情/相关推荐
+  -> Playback Provider 解析并启动播放
+  -> 播放进度、历史、继续观看、已看/收藏写回
+```
 
 ---
 
@@ -74,17 +89,17 @@ Playback Provider (可插拔播放策略)
 
 | 层级 | 推荐组件 | 用途 | 信心 | 备注 |
 |------|----------|------|------|------|
-| TV/手机 App | Flutter + Riverpod | 统一 UI、遥控器导航、移动端复用 | 中高 | Flutter TV 需要实机焦点测试 |
-| TV 焦点 | `dpad` | D-pad focus/region/memory | 中 | 包存在且面向 Flutter TV，但较新 |
+| TV/手机 App | Flutter + StatefulWidget MVP | 统一 UI、遥控器导航、移动端复用 | 高 | 源码已落地；复杂度上来后再引入 Riverpod |
+| TV 焦点 | Flutter 原生 Focus/Shortcuts | D-pad 焦点、确认、数字键导航 | 中高 | 已接入基础遥控器交互；仍需雷鸟电视实机测试 |
 | TV 输入 | 原生输入桥 / `flutter_android_tv_text_field` / 手机辅助输入 | 搜索输入 | 中 | 不把长文本输入作为 TV 核心流程 |
-| BFF | cluo-server | API 聚合、认证、凭据隔离 | 高 | 语言后置，先定 API |
-| 媒体库 | Jellyfin | 媒体管理、进度、收藏、海报 | 高 | 核心系统 |
-| 请求/发现 | Seerr | 发现、请求、连接 Sonarr/Radarr | 高 | Jellyseerr 已迁移/重定向到 Seerr |
-| 剧集/电影 | Sonarr / Radarr | 搜索、下载调度、重命名、归档 | 高 | 成熟组件 |
-| 索引器 | Prowlarr | 用户配置索引器，同步给 Arr | 高 | Cluo 不直接处理站点规则 |
-| 下载器 | qBittorrent | BT/PT 下载队列 | 高 | Web API 稳定 |
-| 动漫 | AutoBangumi | RSS 解析、追番、番剧整理 | 高 | 有 REST API，适合动漫专项 |
-| 字幕 | Bazarr | Sonarr/Radarr 字幕自动化 | 中高 | 作为主字幕方案 |
+| BFF | cluo-server | API 聚合、认证、凭据隔离 | 高 | Node.js/TypeScript 已实现主链路 |
+| 媒体库 | Jellyfin | 媒体管理、进度、收藏、海报、播放流 | 高 | 已接入列表/搜索/详情/同步/扫描/播放上报 |
+| 请求/发现 | Seerr | 发现、请求、连接 Sonarr/Radarr | 待验证 | 不进入番剧 P0；电影/剧集阶段再 POC |
+| 剧集/电影 | Sonarr / Radarr | 搜索、下载调度、重命名、归档 | 待验证 | 成熟组件，但当前未接入本项目主链路 |
+| 索引器 | Prowlarr | 用户配置索引器，同步给 Arr | 待验证 | 当前不直接依赖；Cluo 不处理站点规则 |
+| 下载器 | qBittorrent | BT/PT 下载队列 | 中高 | 已接入队列、暂停/恢复和 v5/v4 控制兼容 |
+| 动漫 | AutoBangumi | RSS 解析、追番、番剧整理 | 高 | 已按当前 SSE 搜索/订阅/规则/下载状态 API 适配 |
+| 字幕 | Bazarr | Sonarr/Radarr 字幕自动化 | P1 | 电影/剧集阶段再接入 |
 | 中文字幕补充 | ChineseSubFinder | 可选补充 | 中低 | 项目停更/维护弱，不作为 P0 |
 | 反代 | Caddy | local domain / HTTPS | 中 | MVP 可先不用 |
 | 反 Cloudflare 辅助 | FlareSolverr | 个别索引器可选依赖 | 低 | 不默认启用，避免扩大维护面 |
@@ -161,7 +176,9 @@ POC 优先级:
 
 Cluo 不做站点 WebView 聚合，不维护具体站点 DOM，不保存站点 Cookie。站点能力由 Prowlarr/AutoBangumi 这类专门组件处理。
 
-### 5.2 电影/电视剧流程
+### 5.2 电影/电视剧流程（P1 候选，待验证）
+
+该流程仍是合理候选，但不作为当前番剧 P0 的成功标准。接入前需要在真实 Seerr/Sonarr/Radarr/Prowlarr 环境里重新验证 API、路径映射、导入行为和质量配置。
 
 ```text
 用户在 Cluo 搜索标题
@@ -199,6 +216,13 @@ Cluo 对 AutoBangumi 暴露的能力:
 | 查看运行状态 | `/api/v1/status` |
 | 查看动漫下载 | `/api/v1/downloader/torrents` |
 
+当前实现状态：
+
+- 已实现 AutoBangumi 搜索、订阅、状态、规则、RSS、下载状态代理，并保留 `local-dev` 回退，便于没有 Docker/真实服务时验证完整主链路。
+- 下载队列已统一合并 AutoBangumi 和 qBittorrent；远端 qBittorrent 支持暂停/恢复，本地任务支持模拟完成。
+- 已完成 `completed` 下载的手动入库、批量入库和服务端后台自动入库；Jellyfin 已配置时会触发扫描并按下载标题同步匹配条目。
+- 电影/剧集仍保留 Seerr + Sonarr/Radarr + Prowlarr 方向，但不进入当前 P0 判定。等番剧链路在真实电视/真实服务上验证后再接。
+
 ### 5.4 手动下载
 
 手动下载不是 P0 主流程，但需要保留高级入口:
@@ -233,54 +257,79 @@ cluo-server 是本地 BFF，不替代 Jellyfin/Arr/AutoBangumi。
 4. 不做多家庭/多租户权限。
 5. 不做完整媒体数据库，Jellyfin 是媒体事实源。
 
-### 6.3 推荐 API
+### 6.3 当前 API 基线
 
 ```text
 GET  /api/health
+POST /api/auth/register
 POST /api/auth/login
+GET  /api/auth/me
+GET  /api/system/status
 GET  /api/home
 
-GET  /api/library/search?q=
-GET  /api/library/items
-GET  /api/library/items/:id
-POST /api/library/items/:id/favorite
-POST /api/library/items/:id/watched
-
 GET  /api/discover/search?q=
+GET  /api/discover/recent
+GET  /api/discover/sources
 GET  /api/discover/trending
-POST /api/requests
-GET  /api/requests
+
+GET  /api/anime/search?q=
+GET  /api/anime/status
+GET  /api/anime/rules
+GET  /api/anime/rss
+GET  /api/anime/subscriptions
+POST /api/anime/subscribe
+GET  /api/anime/downloads
 
 GET  /api/downloads
-POST /api/downloads/pause
-POST /api/downloads/resume
+POST /api/downloads/:id/pause
+POST /api/downloads/:id/resume
+POST /api/downloads/:id/import
+POST /api/downloads/import-completed
+POST /api/automation/download-import/run
+POST /api/anime/downloads/:id/complete
 
-GET  /api/anime/rules
-POST /api/anime/rss
-GET  /api/anime/search?q=
+GET  /api/library/items?limit=&status=
+GET  /api/library/search?q=&limit=&status=
+GET  /api/library/items/:id
+GET  /api/library/items/:id/related
+POST /api/library/items/:id/favorite
+POST /api/library/items/:id/watched
+POST /api/library/sync/jellyfin
 
 GET  /api/playback/providers
 POST /api/playback/resolve
+GET  /api/playback/sessions
+POST /api/playback/sessions
+PATCH /api/playback/sessions/:id
+POST /api/playback/sessions/:id/stop
+
+GET  /api/history
+POST /api/history/events
 
 GET  /api/settings/services
 PATCH /api/settings/services
+POST /api/settings/jellyfin/login
 ```
+
+P1 预留但当前未实现：`POST /api/requests`、`GET /api/requests`、Seerr/Sonarr/Radarr/Prowlarr 相关代理。
 
 ### 6.4 数据模型
 
 ```text
 MediaItem
-  id                 Jellyfin item id if available
-  provider           jellyfin | seerr | sonarr | radarr | autobangumi
-  type               movie | series | episode | anime | season
+  id                 Cluo 本地 id；Jellyfin 条目通常是 jellyfin:<itemId>
+  source             local-dev | jellyfin | autobangumi | qbittorrent
+  type               anime-episode | movie | series-episode
   title
   posterUrl
   backdropUrl
   year
   overview
-  isAvailable
-  playbackProgress
+  durationSeconds
+  playbackPositionSeconds
+  watched
   favorite
+  jellyfin.itemId
 
 Request
   id
@@ -291,13 +340,12 @@ Request
 
 DownloadTask
   id
-  source             qbittorrent | autobangumi
+  source             local-dev | qbittorrent | autobangumi
   title
   progress
-  speed
-  eta
-  category
-  state
+  speedBytesPerSecond
+  state              queued | downloading | paused | completed | failed
+  importStatus
 
 PlaybackTarget
   provider
@@ -318,32 +366,39 @@ TV 端第一屏必须是实际使用界面，不做宣传页。
   - 继续观看
   - 最近添加
   - 正在下载
-  - 推荐/热门
+  - 基于本地事实源的推荐入口
 
 找片
-  - 搜索
+  - 统一搜索
+  - 已接入来源和能力
+  - 最近搜索
+  - 推荐入口
   - 已入库结果
-  - 可请求结果
-  - 请求状态
+  - 番剧搜索结果
+  - AutoBangumi 订阅/规则状态
 
 媒体库
-  - 电影
-  - 电视剧
-  - 动漫
-  - 筛选/排序
+  - 全部/续播/未看/已看/收藏
+  - 搜索
+  - Jellyfin 同步/扫描同步
   - 详情页
+  - 相关推荐
 
-任务
+下载
   - 下载中
-  - 等待导入
+  - 已完成
+  - 自动/手动入库
   - 失败/需处理
-  - 动漫订阅状态
+
+历史
+  - 最近观看
+  - 继续观看进度
 
 设置
-  - Jellyfin/Seerr/Arr/qBittorrent/AutoBangumi 连接状态
+  - Jellyfin/qBittorrent/AutoBangumi 连接状态
   - 播放 Provider 选择和检测
-  - 质量偏好
-  - 字幕偏好
+  - Jellyfin 用户名/密码换 token
+  - 外部播放器包名、MIME type、intent 目标检测
 ```
 
 TV 输入策略:
@@ -365,19 +420,24 @@ TV 输入策略:
 
 ### 8.1 服务分层
 
-P0 基础:
+P0 番剧主链路最小栈:
 
 | 服务 | 必选 | 说明 |
 |------|------|------|
 | Jellyfin | 是 | 媒体库事实源 |
 | qBittorrent | 是 | 下载执行 |
-| Prowlarr | 是 | 索引源配置 |
-| Sonarr | 是 | 电视剧 |
-| Radarr | 是 | 电影 |
-| Seerr | 是 | 请求与发现 |
 | AutoBangumi | 是 | 动漫追番 |
-| Bazarr | 建议 | 字幕 |
 | cluo-server | 是 | App API |
+
+P1 电影/剧集扩展栈:
+
+| 服务 | 必选 | 说明 |
+|------|------|------|
+| Prowlarr | 待验证 | 索引源配置 |
+| Sonarr | 待验证 | 电视剧自动化 |
+| Radarr | 待验证 | 电影自动化 |
+| Seerr | 待验证 | 请求与发现 |
+| Bazarr | 建议 | 字幕 |
 
 可选:
 
@@ -405,12 +465,12 @@ P0 基础:
       incomplete/
   appdata/
     jellyfin/
-    sonarr/
-    radarr/
-    prowlarr/
     qbittorrent/
-    seerr/
     autobangumi/
+    sonarr/       # P1
+    radarr/       # P1
+    prowlarr/     # P1
+    seerr/        # P1
     bazarr/
     cluo-server/
   backup/
@@ -420,11 +480,11 @@ P0 基础:
 
 ```text
 Jellyfin:     /data/media:ro
-Sonarr:       /data
-Radarr:       /data
 qBittorrent:  /data/torrents
 AutoBangumi:  /app/config, /app/data, /data/media/anime
-Bazarr:       /data/media
+Sonarr:       /data                         # P1
+Radarr:       /data                         # P1
+Bazarr:       /data/media                   # P1
 ```
 
 ### 8.3 Compose 原则
@@ -444,40 +504,53 @@ Bazarr:       /data/media
 
 ### Phase 0: 可行性 POC
 
-目标: 在写正式 App 前证明最关键链路可走通。
+目标: 证明最关键链路可走通。当前机器无 Docker，先以本地 BFF + local-dev + 可选真实服务 smoke 为验收方式。
 
-- [ ] 启动最小 Docker 栈: Jellyfin + qBittorrent + Sonarr + Radarr + Prowlarr + Seerr + AutoBangumi
+- [x] local-dev 主链路: 注册/登录 -> 搜索番剧 -> 订阅 -> 下载 -> 入库 -> 播放 session -> 历史/续播
+- [x] cluo-server API、Flutter API 契约、Android debug APK 本地构建验证
+- [x] AutoBangumi 当前 SSE 搜索/订阅/规则/下载状态 API 适配
+- [x] qBittorrent v5/v4 队列控制适配
+- [x] Jellyfin 媒体库、播放解析、进度上报、已看/收藏适配
+- [ ] 目标服务器启动最小 Docker 栈: Jellyfin + qBittorrent + AutoBangumi + cluo-server
 - [ ] Jellyfin 入库 4 类测试样片
 - [ ] TV 上完成播放 Provider POC
-- [ ] 验证 qBittorrent 临时密码、Arr import、Jellyfin 扫描
-- [ ] 验证 AutoBangumi API 和 RSS 订阅流程
+- [ ] 验证 qBittorrent 临时密码、AutoBangumi 整理、Jellyfin 扫描
+- [ ] 在真实 AutoBangumi + qBittorrent + Jellyfin 上跑 `npm run smoke:services`
 - [ ] 记录默认播放 Provider 和兜底 Provider
 
 通过标准:
 
 1. TV 可播放 4K HDR 样片。
 2. 至少一种 Provider 可写回 Jellyfin 进度，或明确实现 Cluo 进度上报方案。
-3. 电影/剧集请求到下载到入库闭环可完成。
-4. 动漫 RSS 到下载到命名到入库闭环可完成。
+3. 动漫 RSS 到下载到命名到入库闭环可完成。
+4. 电影/剧集请求到下载到入库闭环作为 P1，不阻塞番剧 P0。
 
 ### Phase 1: 服务端和 API
 
-- [ ] cluo-server 初始化
-- [ ] 服务配置和健康检查
-- [ ] Jellyfin 媒体库代理
-- [ ] Seerr 请求代理
-- [ ] qBittorrent 下载状态代理
-- [ ] AutoBangumi 状态和订阅代理
-- [ ] PlaybackProvider 配置接口
+- [x] cluo-server 初始化
+- [x] 登录/注册/token 恢复
+- [x] 服务配置和健康检查
+- [x] Jellyfin 媒体库代理、同步、扫描、详情、已看/收藏、播放解析、进度上报
+- [x] qBittorrent 下载状态代理、暂停/恢复
+- [x] AutoBangumi 搜索、订阅、状态、规则、RSS、下载状态代理
+- [x] 下载完成入库、批量入库、后台自动入库
+- [x] PlaybackProvider 配置和解析接口
+- [x] 统一发现搜索、已接入来源、推荐入口、最近搜索
+- [x] 观看历史、首页继续观看/最近添加/下载中
+- [ ] Seerr 请求代理（P1）
+- [ ] Sonarr/Radarr/Prowlarr 代理（P1）
 
 ### Phase 2: TV App MVP
 
-- [ ] Flutter TV 骨架和 D-pad 导航
-- [ ] 首页、媒体库、详情页
-- [ ] 播放按钮接入已验证 Provider
-- [ ] 找片搜索和请求
-- [ ] 下载任务页
-- [ ] 设置页服务健康检查
+- [x] Flutter TV 骨架和 D-pad 导航
+- [x] 首页、找片、媒体库、下载、历史、设置
+- [x] 媒体库筛选、搜索、同步/扫描同步、详情、相关推荐
+- [x] 番剧搜索、订阅、订阅/规则状态
+- [x] 下载任务页、暂停/恢复、完成入库、自动入库状态
+- [x] 设置页服务健康检查、Jellyfin 登录、播放 Provider 检测
+- [x] 播放按钮接入 local-dev/Jellyfin stream-url/Android external-player
+- [ ] 安装到雷鸟 Android TV 验证 external-player/Yamby 拉起
+- [ ] 用真实样片验证 4K HDR、ASS 字幕、多音轨/多字幕
 
 ### Phase 3: 手机端
 
@@ -533,5 +606,4 @@ Bazarr:       /data/media
 - Jellyfin for Kodi 仓库: https://github.com/jellyfin/jellyfin-kodi
 - JellyCon 仓库: https://github.com/jellyfin/jellycon
 - Kodi JSON-RPC 文档: https://kodi.wiki/view/JSON-RPC_API
-- Flutter dpad 包: https://pub.dev/packages/dpad
 - Android TV TextField 插件: https://pub.dev/packages/flutter_android_tv_text_field
