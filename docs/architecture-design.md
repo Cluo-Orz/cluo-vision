@@ -51,25 +51,61 @@ Cluo Vision（Cluo 视界）是一个面向**电视大屏**和**手机移动端*
 
 | 维度 | 选型 | 理由 |
 |------|------|------|
-| **框架** | **Flutter 3.x** | Google 在 2025 年大幅加强了 Android TV D-pad 优化；Impeller 引擎实现 60fps 流畅 UI；一套代码覆盖 Android TV + Android 手机 + iOS |
+| **框架** | **Flutter 3.x** | 一套代码覆盖 Android TV + 手机；Impeller 引擎 60fps；Google 2025 年大幅加强 TV 支持 |
 | **状态管理** | Riverpod 2.x | 编译时安全、无 Context 依赖、适合复杂异步场景 |
-| **视频播放** | media_kit (基于 libmpv) | 支持 4K HDR/DV 硬解、ASS 字幕渲染、多音轨切换 |
-| **网络层** | dio + retrofit | HTTP 请求 + API 类型生成 |
+| **网络层** | dio | HTTP 请求 |
 | **数据库** | drift (SQLite) | 本地缓存（播放历史、下载进度等） |
-| **TV 适配** | flutter_tv + FocusNode 体系 | D-pad 焦点管理、遥控器事件 |
+| **TV 适配** | **dpad v3** | 2025 年生产级 D-pad 方案：焦点自动恢复、焦点记忆、嵌套滚动修复、调试浮层、主题化焦点效果 |
 
 **为什么不用 React Native？**
-
 - RN 在 TV 端的 D-pad 支持需要大量自定义实现
-- RN 的 JS Bridge 在视频重场景下容易出现掉帧
-- Flutter 的 Impeller 渲染引擎在低性能 TV 芯片上表现更好
+- RN 的 JS Bridge 在复杂列表场景下容易出现掉帧
+- Flutter 的 Impeller 引擎在 TV SoC 上表现更好
 
 **为什么不用 Kotlin Multiplatform？**
-
-- 缺少 iOS 端覆盖（用户可能需要）
+- 缺少 iOS 端覆盖
 - 生态成熟度不如 Flutter
 
-### 3.2 服务端
+### 3.2 视频播放策略：混合方案 🔑
+
+这是本方案最重要的架构决策。经过调研，**Cluo Vision App 不内置视频播放器**，而是通过 Android Intent 深度链接调起 Yamby（专业的 Jellyfin Android TV 客户端）来处理播放。
+
+```
+┌─────────────────────────────────────────────┐
+│          Cluo Vision App (Flutter)          │
+│                                             │
+│  首页 · 找片 · 浏览媒体库 · 下载管理          │
+│                   ↓                         │
+│          用户点击「播放」                      │
+│                   ↓                         │
+│    Intent 调起 Yamby (传 Jellyfin itemId)    │
+│                   ↓                         │
+│  ┌─────────────────────────────────────┐    │
+│  │     Yamby (原生 Android TV 应用)     │    │
+│  │  mpv 内核 · 硬件解码 · 全格式支持     │    │
+│  │  4K HDR/DV · ASS 字幕 · 音频直通     │    │
+│  └─────────────────────────────────────┘    │
+│                   ↓                         │
+│         用户按返回 → 回到 Cluo Vision         │
+└─────────────────────────────────────────────┘
+```
+
+**为什么不自建播放器？**
+
+| 需求 | 自建 (media_kit/VLC) | Yamby | 说明 |
+|------|---------------------|-------|------|
+| 4K 硬解 | 🟢 可行 | ✅ 已验证 | MediaCodec 均可 |
+| HDR10/HDR10+ | 🟡 勉强 | ✅ 已验证 | 色彩映射可能不准 |
+| **Dolby Vision** | 🔴 不可行 | ✅ Jellyfin 转码兜底 | 开源播放器均不支持 DV Profile 5/7/8 |
+| ASS 特效字幕 | 🟡 边缘 case | ✅ 已验证 | libass 渲染基本可用 |
+| 音频直通 | 🟡 需调试 | ✅ 已验证 | TrueHD/DTS-HD 直通功放 |
+| 开发维护成本 | 极高 | 零 | 播放器开发占视频 App 60%+ 工作量 |
+
+**核心矛盾**：鹤7 PRO 支持 Dolby Vision IQ（4200nit / 2448 分区），但**目前没有任何开源播放器能正确渲染 Dolby Vision**。自建播放器等于让电视的 DV 能力变成摆设。Yamby 配合 Jellyfin 服务器端转码，可以在不支持 DV 解码时自动回退到 HDR10，保证最佳可用画质。
+
+**深度链接实现**：Jellyfin 的 Android TV 客户端支持 Intent URI 协议，Cluo Vision 构造 `intent://` 传入 `itemId`，用户点击播放瞬间打开 Yamby 对应影片播放页，看完按返回键回到 Cluo Vision。对用户来说完全无感。
+
+### 3.3 服务端
 
 | 组件 | 选型 | 说明 |
 |------|------|------|
@@ -82,9 +118,9 @@ Cluo Vision（Cluo 视界）是一个面向**电视大屏**和**手机移动端*
 | **字幕** | **Bazarr** + **ChineseSubFinder** | 自动下载中文字幕 |
 | **动漫追番** | **AutoBangumi** | 专为动漫设计的 RSS 自动下载 + 自动重命名 + Jellyfin 刮削 |
 | **反向代理** | **Caddy** (或 Nginx) | 自动 HTTPS、反向代理各服务 |
-| **自定义后端** | **cluo-vision-server** (Go/Node.js) | API 聚合层，统一认证、状态管理 |
+| **自定义后端** | **cluo-vision-server** (Node.js/TypeScript/Fastify) | API 聚合层，统一认证、状态管理 |
 
-### 3.3 为什么选 Jellyfin 而不是 Plex/Emby？
+### 3.4 为什么选 Jellyfin 而不是 Plex/Emby？
 
 | 对比维度 | Jellyfin | Plex | Emby |
 |----------|----------|------|------|
@@ -234,18 +270,24 @@ PT 入门路径:
 ┌──────────────────────────────────────────────────────────┐
 │                    客户端层                               │
 │                                                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
-│  │ Android TV  │  │ Android 手机│  │  iOS 手机   │      │
-│  │ (Flutter)   │  │ (Flutter)   │  │ (Flutter)   │      │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘      │
-│         │                │                │              │
-└─────────┼────────────────┼────────────────┼──────────────┘
-          │                │                │
-          └────────────────┼────────────────┘
-                           │  HTTPS (局域网)
-          ┌────────────────┴────────────────┐
-          │                                 │
-┌─────────┴─────────────────────────────────┴──────────────┐
+│  ┌──────────────────────┐                                │
+│  │   Cluo Vision App    │      ┌────────────────────┐   │
+│  │     (Flutter)        │      │  Yamby (原生 TV)    │   │
+│  │                      │      │                    │   │
+│  │ · 找片 (搜索/下载)    │ 点击  │ · 视频播放          │   │
+│  │ · 看片 (浏览媒体库)   │→播放→│ · 4K HDR/DV 硬解   │   │
+│  │ · 首页 (推荐/继续看)  │      │ · ASS 特效字幕      │   │
+│  │ · 我的 (历史/收藏)    │←返回 │ · 音频直通          │   │
+│  └──────────┬───────────┘      └────────────────────┘   │
+│             │                                            │
+│  ┌──────────┴───────────┐                                │
+│  │    Android TV / 手机  │                                │
+│  └──────────────────────┘                                │
+└─────────────────────────┬────────────────────────────────┘
+                          │  HTTPS (局域网)
+          ┌───────────────┴────────────────┐
+          │                                │
+┌─────────┴────────────────────────────────┴──────────────┐
 │                    网关层                                 │
 │  ┌──────────────────────────────────────────────────┐    │
 │  │              Caddy (反向代理 + HTTPS)              │    │
@@ -257,7 +299,7 @@ PT 入门路径:
 ├──────────────────────────────────────────────────────────┤
 │                    API 聚合层                             │
 │  ┌──────────────────────────────────────────────────┐    │
-│  │          cluo-vision-server (Go/Fiber)            │    │
+│  │     cluo-vision-server (Node.js/TS/Fastify)       │    │
 │  │                                                   │    │
 │  │  /api/auth       用户认证 (本地账号体系)           │    │
 │  │  /api/library    媒体库浏览 (聚合 Jellyfin API)    │    │
@@ -312,9 +354,12 @@ Cluo App → cluo-vision-server → Jellyseerr/Sonarr/Radarr → Prowlarr → PT
                                     ↓
                               Jellyfin 刮削元数据 → 可观看
 
-【看片流程】
-Cluo App → cluo-vision-server → Jellyfin API → 返回媒体列表/详情
-Cluo App → Jellyfin (直连播放流) → NAS 文件 → 电视硬解播放
+【看片流程（浏览）】
+Cluo App → cluo-vision-server → Jellyfin API → 返回媒体列表/详情/海报
+
+【看片流程（播放）】
+Cluo App → Intent 调起 Yamby → Yamby 直连 Jellyfin 播放流 → NAS 文件 → 电视硬解
+(播放完毕按返回键回到 Cluo App)
 ```
 
 ### 5.3 关于自定义后端 (cluo-vision-server)
@@ -329,12 +374,13 @@ Jellyfin、Sonarr、Radarr、qBittorrent 各自有独立的 API 和 WebUI，但�
 4. **体验定制** — 为电视端优化的 API 响应格式（精简字段、适配翻页）
 5. **缓存加速** — 热点数据缓存，减少对 Jellyfin API 的频繁调用
 
-**技术选型建议**: **Go (Fiber)** 或 **Node.js (Fastify)**
+**技术选型**: **Node.js + TypeScript + Fastify**
 
-- Go: 性能好、部署简单（单二进制）、内存占用低、适合 NAS 环境
-- Node.js: 生态丰富、JSON 处理天然高效、适合 API 聚合场景
+当前开发机已安装 Node.js v24，选择 Node.js 可以立即开始开发和验证。Fastify 性能接近 Go，TypeScript 提供类型安全。
 
-推荐 **Go + Fiber**，编译为单文件部署在 NAS 上，资源占用极小。
+- Node.js: JSON 处理天然高效（API 聚合的主要工作就是 JSON 转换和转发），生态丰富
+- Fastify: 高性能 HTTP 框架，插件体系成熟（JWT、CORS、Rate Limit），启动快
+- TypeScript: 类型安全，接口定义即文档
 
 ---
 
@@ -369,15 +415,15 @@ Tab 3: 看片 📺 (媒体库)
   ├── 筛选：类型、年份、评分
   ├── 详情页
   │   ├── 海报、简介、演职员
-  │   ├── 播放按钮
+  │   ├── 播放按钮 → Intent 调起 Yamby
+  │   ├── "在 Yamby 中打开" 按钮
   │   ├── 收藏/评分
   │   └── 相关推荐
-  └── 播放器
-      ├── 画质选择（4K/1080p/720p）
-      ├── 音轨选择
-      ├── 字幕选择（含 ASS 特效字幕）
-      ├── 播放进度记忆
-      └── 跳过片头/片尾（如果 Jellyfin 检测到）
+  └── 播放：由 Yamby 接管
+      ├── 4K HDR/DV 硬解播放
+      ├── 画质/音轨/字幕选择
+      ├── 播放进度自动同步回 Jellyfin
+      └── 看完返回 Cluo Vision
 
 Tab 4: 我的
   ├── 播放历史
@@ -394,19 +440,20 @@ Tab 4: 我的
 
 | 要点 | 设计规则 |
 |------|----------|
+| **D-pad 方案** | 使用 `dpad` v3 包（生产级）：`Dpad.wrap()` 一行接入，自动焦点恢复、焦点记忆、嵌套滚动修复 |
+| **焦点效果** | DpadScaleEffect（放大）+ DpadBorderEffect（白色边框），由 `DpadTheme` 统一管理 |
 | **10-foot UI** | 字号 ≥ 24sp，卡片大小适配 3-5m 观看距离 |
-| **D-pad 导航** | 所有可交互元素必须在 FocusNode 树中，焦点状态有明显视觉反馈（放大 + 边框高亮） |
 | **网格布局** | 横滑 + 竖滑组合，每行 4-6 个卡片 |
 | **遥控器映射** | 上下左右=导航，确认=进入/播放，返回=退出，菜单=更多选项 |
-| **播放控制** | 方向键上下=音量，左右=快进快退，确认=暂停/播放 |
-| **文本输入** | 尽量用语音输入或手机扫码输入，避免遥控器打字 |
+| **文本输入** | 使用 `flutter_android_tv_text_field`（原生 EditText），避免 Flutter TextField 在 TV 上的已知 bug |
+| **焦点区域** | 使用 `DpadRegion` + `memoryKey` 实现 Tab 切换时焦点位置记忆 |
 
 ### 6.3 手机端差异
 
 - 触控操作，纵向滚动为主
-- 支持横屏播放
-- 可作为 TV 遥控器（通过局域网通信）
-- 支持投屏到 TV（如果 Jellyfin 不支持直接投屏，可用 DLNA）
+- 支持横屏播放（同样调起 Yamby 或 Jellyfin 手机客户端）
+- 可作为 TV 遥控器（通过局域网向 cluo-vision-server 发送指令）
+- 手机端使用 Material Design 触控交互，无需 D-pad 适配
 
 ---
 
@@ -488,7 +535,7 @@ Docker Compose 配置和部署文档位于 `cluo-vision-server` 仓库，详见�
 
 ### Phase 3: 自定义后端（2-3 周）
 
-- [ ] cluo-vision-server 项目初始化（Go Fiber）
+- [ ] cluo-vision-server 项目初始化（Node.js + TypeScript + Fastify）
 - [ ] 实现 API 聚合层：
   - Jellyfin API 代理（媒体库、播放进度、收藏）
   - Sonarr/Radarr API 代理（搜索、请求下载）
@@ -499,12 +546,12 @@ Docker Compose 配置和部署文档位于 `cluo-vision-server` 仓库，详见�
 ### Phase 4: Flutter App 开发（4-6 周）
 
 - [ ] Flutter 项目初始化，配置 TV + 手机双端
+- [ ] 集成 `dpad` v3 实现 TV 端 D-pad 导航
 - [ ] 实现首页（播放历史、最近添加、推荐）
-- [ ] 实现"看片"模块（媒体库浏览、详情页、播放器）
+- [ ] 实现"看片"模块（媒体库浏览、详情页、Intent 调起 Yamby 播放）
 - [ ] 实现"找片"模块（搜索、资源站入口、下载管理）
 - [ ] 实现"我的"模块（历史、收藏、设置）
-- [ ] TV 端 D-pad 导航适配
-- [ ] 播放器集成 (media_kit)
+- [ ] 播放器：Yamby Intent 深度链接集成
 
 ### Phase 5: 打磨发布（2-3 周）
 
@@ -522,10 +569,11 @@ Docker Compose 配置和部署文档位于 `cluo-vision-server` 仓库，详见�
 |------|----------|
 | PT 站邀请难度大 | 优先从 BTSCHOOL 入门，M-Team 可捐赠入站，节日留意开放注册 |
 | 4K 高码率播放卡顿 | TV 用有线网络，Jellyfin 开启硬件转码（Intel QSV），降级到 1080p 兜底 |
+| **Dolby Vision 无法渲染** | 开源播放器均不支持 DV。混合方案：播放交给 Yamby，Jellyfin 服务端转码回退 HDR10 |
 | 字幕刮削不准确 | 文件命名严格遵循规范，Bazarr + ChineseSubFinder 双保险 |
-| Flutter TV 生态不够成熟 | 调研确认 media_kit 在 MT9655 上的硬解兼容性，必要时降级到 ExoPlayer |
 | PT 做种占用上传带宽 | qBittorrent 设置限速，做种时间配额管理 |
 | 雷鸟电视侧载 APK 限制 | Android 14 允许侧载（开发者选项），灵控系统不限制 APK 安装 |
+| Flutter TV TextField 焦点 bug | 使用 `flutter_android_tv_text_field` 原生 EditText 替代 Flutter TextField |
 
 ---
 
@@ -539,8 +587,9 @@ Docker Compose 配置和部署文档位于 `cluo-vision-server` 仓库，详见�
 - Radarr: https://radarr.video
 - Prowlarr: https://prowlarr.com
 - AutoBangumi: https://www.autobangumi.org
-- Flutter TV: https://flutter.dev
-- media_kit: https://github.com/media-kit/media-kit
+- Yamby (Jellyfin TV 客户端): Google Play / GitHub
+- Flutter dpad package: https://pub.dev/packages/dpad
+- Flutter: https://flutter.dev
 
 ### B. 关键数据（供硬件采购参考）
 
