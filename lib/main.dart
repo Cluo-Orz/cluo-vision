@@ -452,16 +452,35 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  _SecondaryAction(
-                    label: "刷新",
-                    onPressed: () => _run(_loadLibrary),
-                  ),
-                  const SizedBox(width: 12),
                   _PrimaryAction(
                     label: "搜索",
                     onPressed: () => _run(_searchLibrary),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _SecondaryAction(
+                      label: "刷新",
+                      onPressed: () => _run(_loadLibrary),
+                    ),
+                    _SecondaryAction(
+                      label: "同步 Jellyfin",
+                      onPressed: () => _run(() => _syncJellyfinLibrary()),
+                    ),
+                    _SecondaryAction(
+                      label: "扫描同步",
+                      onPressed: () => _run(
+                        () => _syncJellyfinLibrary(scan: true),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 20),
               Expanded(
@@ -1645,6 +1664,23 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _syncJellyfinLibrary({bool scan = false}) async {
+    final query = nullIfBlank(_librarySearchController.text);
+    final result = await _api.syncJellyfinLibrary(
+      searchTerm: query,
+      scan: scan,
+    );
+    final synced = intValue(result["synced"]);
+    final scanTriggered = boolValue(result["scanTriggered"]);
+    await Future.wait([_loadLibrary(), _loadHome()]);
+    if (!mounted) return;
+    setState(() {
+      _status = scanTriggered
+          ? "已触发 Jellyfin 扫描并同步 $synced 条"
+          : "已同步 Jellyfin：$synced 条";
+    });
+  }
+
   Future<void> _searchLibrary() async {
     final query = _librarySearchController.text.trim();
     if (query.isEmpty) {
@@ -1917,6 +1953,15 @@ class CluoApi {
 
   Future<Map<String, dynamic>> libraryItems({int limit = 100}) =>
       get("/api/library/items?limit=$limit");
+
+  Future<Map<String, dynamic>> syncJellyfinLibrary({
+    String? searchTerm,
+    bool scan = false,
+  }) =>
+      post("/api/library/sync/jellyfin", {
+        if (searchTerm != null) "searchTerm": searchTerm,
+        "scan": scan,
+      });
 
   Future<Map<String, dynamic>> librarySearch(String query) => get(
         "/api/library/search?q=${Uri.encodeQueryComponent(query)}",

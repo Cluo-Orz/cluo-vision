@@ -88,6 +88,12 @@ void main() {
             .id,
         media.id,
       );
+      final jellyfinSync = await api.syncJellyfinLibrary(
+        searchTerm: "迷宫 饭",
+        scan: true,
+      );
+      expect(jellyfinSync["scanTriggered"], isTrue);
+      expect(jellyfinSync["synced"], 1);
       expect(
         MediaItem.fromJson(
                 listOf((await api.librarySearch("迷宫 饭"))["items"]).first)
@@ -146,6 +152,7 @@ void main() {
       expect(seen, contains("POST /api/downloads/task%201/pause"));
       expect(seen, contains("POST /api/downloads/import-completed"));
       expect(seen, contains("POST /api/automation/download-import/run"));
+      expect(seen, contains("POST /api/library/sync/jellyfin"));
       expect(seen, contains("PATCH /api/playback/sessions/session%201"));
     } finally {
       await server.close(force: true);
@@ -324,6 +331,19 @@ Future<void> _handleContractRequest(
     expect(request.uri.queryParameters["limit"], "100");
     await _writeJson(request, {
       "items": [_mediaItem()]
+    });
+    return;
+  }
+
+  if (_matches(segments, ["api", "library", "sync", "jellyfin"])) {
+    final body = await _readJson(request);
+    expect(body["searchTerm"], "迷宫 饭");
+    expect(body["scan"], true);
+    await _writeJson(request, {
+      "configured": true,
+      "scanTriggered": true,
+      "synced": 1,
+      "items": [_mediaItem()],
     });
     return;
   }
