@@ -78,6 +78,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
   List<AnimeRule> _animeRules = [];
   bool _animeRulesConfigured = false;
   List<DiscoverSource> _discoverSources = [];
+  DiscoverTrending? _discoverTrending;
   List<SearchHistoryEntry> _discoverHistory = [];
   List<MediaItem> _discoverLibraryMatches = [];
   List<DownloadTask> _downloads = [];
@@ -358,6 +359,15 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
         const SizedBox(height: 16),
         if (_discoverSources.isNotEmpty) ...[
           _DiscoverSourcesRail(sources: _discoverSources),
+          const SizedBox(height: 16),
+        ],
+        if (_discoverTrending?.suggestions.isNotEmpty == true) ...[
+          _DiscoverSuggestionRail(
+            suggestions: _discoverTrending!.suggestions,
+            onSelected: (suggestion) => _run(
+              () => _openDiscoverSuggestion(suggestion),
+            ),
+          ),
           const SizedBox(height: 16),
         ],
         if (_discoverHistory.isNotEmpty) ...[
@@ -1148,6 +1158,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
       _animeRules = [];
       _animeRulesConfigured = false;
       _discoverSources = [];
+      _discoverTrending = null;
       _discoverHistory = [];
       _discoverLibraryMatches = [];
       _home = null;
@@ -1286,6 +1297,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
       _loadSettings(),
       _loadSystemStatus(),
       _loadDiscoverSources(),
+      _loadDiscoverTrending(),
       _loadAnimeTracking(),
       _loadDiscoverHistory(),
       _loadHome(),
@@ -1307,6 +1319,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
         _loadHome(),
         _loadDownloads(),
         if (_tab == 1) _loadAnimeTracking(),
+        if (_tab == 1) _loadDiscoverTrending(),
         if (_tab == 4) _loadHistory(),
       ]);
     } catch (_) {
@@ -1509,6 +1522,36 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
         result["items"],
       ).map(DiscoverSource.fromJson).toList(),
     );
+  }
+
+  Future<void> _loadDiscoverTrending() async {
+    final result = await _api.discoverTrending();
+    setState(() => _discoverTrending = DiscoverTrending.fromJson(result));
+  }
+
+  Future<void> _openDiscoverSuggestion(DiscoverSuggestion suggestion) async {
+    if (suggestion.action == "search") {
+      final query = suggestion.query ?? suggestion.title;
+      _animeSearchController.text = query;
+      await _searchAnime();
+      return;
+    }
+
+    if (suggestion.action == "open-library") {
+      _selectTab(2);
+      final mediaItemId = suggestion.mediaItemId;
+      if (mediaItemId != null) {
+        await _loadMediaDetail(mediaItemId);
+      } else {
+        await _loadLibrary();
+      }
+      return;
+    }
+
+    if (suggestion.action == "open-downloads") {
+      _selectTab(3);
+      await _loadDownloads(autoImport: false);
+    }
   }
 
   Future<void> _loadAnimeTracking() async {
@@ -1956,6 +1999,9 @@ class CluoApi {
   Future<Map<String, dynamic>> discoverSources() =>
       get("/api/discover/sources");
 
+  Future<Map<String, dynamic>> discoverTrending() =>
+      get("/api/discover/trending");
+
   Future<Map<String, dynamic>> animeSubscriptions() =>
       get("/api/anime/subscriptions");
 
@@ -2256,6 +2302,89 @@ class DiscoverSource {
   final List<String> requiredFor;
   final String? provider;
   final String? baseUrl;
+}
+
+class DiscoverTrending {
+  DiscoverTrending({
+    required this.checkedAt,
+    required this.suggestions,
+    required this.recentlyAdded,
+    required this.activeDownloads,
+    required this.subscriptions,
+    required this.recentSearches,
+  });
+
+  factory DiscoverTrending.fromJson(Map<String, dynamic> json) {
+    return DiscoverTrending(
+      checkedAt: stringValue(json["checkedAt"]),
+      suggestions: listOf(
+        json["suggestions"],
+      ).map(DiscoverSuggestion.fromJson).toList(),
+      recentlyAdded: listOf(
+        json["recentlyAdded"],
+      ).map(MediaItem.fromJson).toList(),
+      activeDownloads: listOf(
+        json["activeDownloads"],
+      ).map(DownloadTask.fromJson).toList(),
+      subscriptions: listOf(
+        json["subscriptions"],
+      ).map(AnimeSubscription.fromJson).toList(),
+      recentSearches: listOf(
+        json["recentSearches"],
+      ).map(SearchHistoryEntry.fromJson).toList(),
+    );
+  }
+
+  final String checkedAt;
+  final List<DiscoverSuggestion> suggestions;
+  final List<MediaItem> recentlyAdded;
+  final List<DownloadTask> activeDownloads;
+  final List<AnimeSubscription> subscriptions;
+  final List<SearchHistoryEntry> recentSearches;
+}
+
+class DiscoverSuggestion {
+  DiscoverSuggestion({
+    required this.id,
+    required this.kind,
+    required this.action,
+    required this.title,
+    required this.subtitle,
+    required this.reason,
+    this.query,
+    this.mediaItemId,
+    this.downloadId,
+    this.posterUrl,
+    this.status,
+  });
+
+  factory DiscoverSuggestion.fromJson(Map<String, dynamic> json) {
+    return DiscoverSuggestion(
+      id: stringValue(json["id"]),
+      kind: stringValue(json["kind"], fallback: "starter"),
+      action: stringValue(json["action"], fallback: "search"),
+      title: stringValue(json["title"]),
+      subtitle: stringValue(json["subtitle"]),
+      reason: stringValue(json["reason"]),
+      query: nullableString(json["query"]),
+      mediaItemId: nullableString(json["mediaItemId"]),
+      downloadId: nullableString(json["downloadId"]),
+      posterUrl: nullableString(json["posterUrl"]),
+      status: nullableString(json["status"]),
+    );
+  }
+
+  final String id;
+  final String kind;
+  final String action;
+  final String title;
+  final String subtitle;
+  final String reason;
+  final String? query;
+  final String? mediaItemId;
+  final String? downloadId;
+  final String? posterUrl;
+  final String? status;
 }
 
 class SearchHistoryEntry {
@@ -2767,6 +2896,24 @@ String buildAndroidViewIntentUri(
   return parts.join(";");
 }
 
+String suggestionKindLabel(String kind) {
+  return switch (kind) {
+    "library" => "媒体库",
+    "download" => "下载",
+    "subscription" => "订阅",
+    "recent-search" => "最近搜索",
+    _ => "推荐",
+  };
+}
+
+String suggestionActionLabel(String action) {
+  return switch (action) {
+    "open-library" => "详情",
+    "open-downloads" => "下载",
+    _ => "搜索",
+  };
+}
+
 class HistoryEntry {
   HistoryEntry({
     required this.itemId,
@@ -3048,6 +3195,42 @@ class _DiscoverSourceCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DiscoverSuggestionRail extends StatelessWidget {
+  const _DiscoverSuggestionRail({
+    required this.suggestions,
+    required this.onSelected,
+  });
+
+  final List<DiscoverSuggestion> suggestions;
+  final ValueChanged<DiscoverSuggestion> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle("推荐入口", trailing: "${suggestions.length}"),
+        _HorizontalRail(
+          children: [
+            for (final suggestion in suggestions.take(8))
+              _InfoCard(
+                title: suggestion.title,
+                subtitle: [
+                  suggestionKindLabel(suggestion.kind),
+                  suggestion.subtitle,
+                ].where((item) => item.isNotEmpty).join(" · "),
+                body: suggestion.reason,
+                posterUrl: suggestion.posterUrl,
+                actionLabel: suggestionActionLabel(suggestion.action),
+                onAction: () => onSelected(suggestion),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -45,6 +45,10 @@ void main() {
       expect(sources.first.id, "jellyfin-library");
       expect(sources.first.available, isTrue);
 
+      final trending = DiscoverTrending.fromJson(await api.discoverTrending());
+      expect(trending.suggestions.first.action, "search");
+      expect(trending.suggestions.first.title, "迷宫饭");
+
       final discover = await api.discoverSearch("迷宫 饭");
       final anime = AnimeSearchResult.fromJson(listOf(discover["anime"]).first);
       expect(anime.title, "迷宫饭");
@@ -156,6 +160,7 @@ void main() {
           contains(
               "GET /api/discover/search?q=%E8%BF%B7%E5%AE%AB+%E9%A5%AD&limit=12"));
       expect(seen, contains("GET /api/discover/sources"));
+      expect(seen, contains("GET /api/discover/trending"));
       expect(seen, contains("POST /api/downloads/task%201/pause"));
       expect(seen, contains("POST /api/downloads/import-completed"));
       expect(seen, contains("POST /api/automation/download-import/run"));
@@ -225,6 +230,29 @@ Future<void> _handleContractRequest(
           "requiredFor": ["library", "playback"],
         },
       ],
+    });
+    return;
+  }
+
+  if (request.method == "GET" && request.uri.path == "/api/discover/trending") {
+    await _writeJson(request, {
+      "checkedAt": "2026-07-05T00:00:00.000Z",
+      "suggestions": [
+        {
+          "id": "starter:local:mikan:delicious-in-dungeon",
+          "kind": "starter",
+          "action": "search",
+          "title": "迷宫饭",
+          "subtitle": "Dungeon Meshi",
+          "reason": "本地开发推荐，可验证发现到订阅主链路",
+          "query": "迷宫饭",
+          "status": "local-dev",
+        },
+      ],
+      "recentlyAdded": [],
+      "activeDownloads": [],
+      "subscriptions": [],
+      "recentSearches": [],
     });
     return;
   }

@@ -291,4 +291,29 @@ void main() {
     expect(source.available, isFalse);
     expect(source.tags, contains("mikan"));
   });
+
+  test("DiscoverTrending parses actionable recommendations", () {
+    final trending = DiscoverTrending.fromJson({
+      "checkedAt": "2026-07-05T00:00:00.000Z",
+      "suggestions": [
+        {
+          "id": "library:media-1",
+          "kind": "library",
+          "action": "open-library",
+          "title": "迷宫饭 - S01E01",
+          "subtitle": "最近入库",
+          "reason": "可直接进入详情或播放",
+          "mediaItemId": "media-1",
+        },
+      ],
+      "recentlyAdded": [],
+      "activeDownloads": [],
+      "subscriptions": [],
+      "recentSearches": [],
+    });
+
+    expect(trending.suggestions.single.mediaItemId, "media-1");
+    expect(suggestionKindLabel(trending.suggestions.single.kind), "媒体库");
+    expect(suggestionActionLabel(trending.suggestions.single.action), "详情");
+  });
 }
