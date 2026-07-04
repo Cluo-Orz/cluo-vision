@@ -110,6 +110,9 @@ void main() {
             .id,
         media.id,
       );
+      final related = await api.relatedMedia(media.id);
+      expect(MediaItem.fromJson(listOf(related["items"]).first).title,
+          "葬送的芙莉莲 - S01E01");
 
       final playback = PlaybackSession.fromJson(
         asMap((await api.startPlayback(media.id))["session"]),
@@ -165,6 +168,8 @@ void main() {
       expect(seen, contains("POST /api/downloads/import-completed"));
       expect(seen, contains("POST /api/automation/download-import/run"));
       expect(seen, contains("POST /api/library/sync/jellyfin"));
+      expect(
+          seen, contains("GET /api/library/items/media%201/related?limit=8"));
       expect(seen, contains("PATCH /api/playback/sessions/session%201"));
     } finally {
       await server.close(force: true);
@@ -412,6 +417,15 @@ Future<void> _handleContractRequest(
     return;
   }
 
+  if (_matches(segments, ["api", "library", "items", "media 1", "related"])) {
+    expect(request.uri.queryParameters["limit"], "8");
+    await _writeJson(request, {
+      "item": _mediaItem(),
+      "items": [_relatedMediaItem()],
+    });
+    return;
+  }
+
   if (_matches(segments, ["api", "playback", "sessions"]) &&
       request.method == "POST") {
     final body = await _readJson(request);
@@ -555,6 +569,17 @@ Map<String, Object?> _mediaItem() => {
       "downloadTaskId": "task 1",
       "animeId": "sub 1",
       "createdAt": "2026-07-05T00:00:00.000Z",
+    };
+
+Map<String, Object?> _relatedMediaItem() => {
+      "id": "media 2",
+      "title": "葬送的芙莉莲 - S01E01",
+      "source": "local-dev",
+      "type": "anime-episode",
+      "durationSeconds": 1440,
+      "downloadTaskId": "task 2",
+      "animeId": "sub 2",
+      "createdAt": "2026-07-05T00:01:00.000Z",
     };
 
 Map<String, Object?> _playbackSession({

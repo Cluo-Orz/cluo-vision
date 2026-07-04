@@ -85,6 +85,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
   List<MediaItem> _library = [];
   List<HistoryEntry> _history = [];
   MediaItem? _selectedMedia;
+  List<MediaItem> _relatedMedia = [];
   PlaybackSession? _session;
   Timer? _refreshTimer;
   DateTime? _externalPlaybackLeftAt;
@@ -591,6 +592,28 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
               ),
             ],
           ),
+          if (_relatedMedia.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            const Divider(),
+            const SizedBox(height: 16),
+            _SectionTitle("相关推荐", trailing: "${_relatedMedia.length}"),
+            _HorizontalRail(
+              children: [
+                for (final item in _relatedMedia)
+                  _InfoCard(
+                    title: item.title,
+                    subtitle: [
+                      item.source,
+                      item.watched ? "已看" : "未看",
+                    ].join(" · "),
+                    body: item.overview,
+                    posterUrl: item.posterUrl,
+                    actionLabel: "详情",
+                    onAction: () => _run(() => _loadMediaDetail(item.id)),
+                  ),
+              ],
+            ),
+          ],
           if (_session != null) ...[
             const SizedBox(height: 28),
             const Divider(),
@@ -1167,6 +1190,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
       _library = [];
       _history = [];
       _selectedMedia = null;
+      _relatedMedia = [];
       _session = null;
     });
     await _health();
@@ -1630,6 +1654,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
         setState(() {
           if (importedItems.isNotEmpty && _selectedMedia == null) {
             _selectedMedia = importedItems.first;
+            _relatedMedia = [];
           }
           _status = "自动入库：已入库 $imported，等待扫描 $pending，失败 $failed，同步 $synced 条";
         });
@@ -1662,6 +1687,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
     setState(() {
       if (mediaItems.isNotEmpty) {
         _selectedMedia = mediaItems.first;
+        _relatedMedia = [];
         _tab = 2;
         _status = "已完成并入库：${mediaItems.first.title}";
       } else {
@@ -1688,6 +1714,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
     setState(() {
       if (importedItems.isNotEmpty) {
         _selectedMedia = importedItems.first;
+        _relatedMedia = [];
         _tab = 2;
         _status = "已入库：${importedItems.first.title}";
       } else if (importStatus == "pending-scan") {
@@ -1722,6 +1749,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
     setState(() {
       if (importedItems.isNotEmpty) {
         _selectedMedia = importedItems.first;
+        _relatedMedia = [];
       }
       _status = "批量入库完成：已入库 $imported，等待扫描 $pending，失败 $failed，同步 $synced 条";
       if (importedItems.isNotEmpty) {
@@ -1788,8 +1816,18 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
   }
 
   Future<void> _loadMediaDetail(String itemId) async {
-    final result = await _api.mediaDetail(itemId);
-    setState(() => _selectedMedia = MediaItem.fromJson(asMap(result["item"])));
+    final responses = await Future.wait([
+      _api.mediaDetail(itemId),
+      _api.relatedMedia(itemId),
+    ]);
+    final detail = responses[0];
+    final related = responses[1];
+    setState(() {
+      _selectedMedia = MediaItem.fromJson(asMap(detail["item"]));
+      _relatedMedia = listOf(
+        related["items"],
+      ).map(MediaItem.fromJson).toList();
+    });
   }
 
   Future<void> _setWatched(MediaItem media, bool watched) async {
@@ -2068,6 +2106,11 @@ class CluoApi {
 
   Future<Map<String, dynamic>> mediaDetail(String itemId) => get(
         "/api/library/items/${Uri.encodeComponent(itemId)}",
+      );
+
+  Future<Map<String, dynamic>> relatedMedia(String itemId, {int limit = 8}) =>
+      get(
+        "/api/library/items/${Uri.encodeComponent(itemId)}/related?limit=$limit",
       );
 
   Future<Map<String, dynamic>> setWatched(String itemId, bool watched) => post(
