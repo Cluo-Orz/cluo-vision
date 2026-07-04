@@ -83,6 +83,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
   List<MediaItem> _discoverLibraryMatches = [];
   List<DownloadTask> _downloads = [];
   List<MediaItem> _library = [];
+  String _libraryFilter = "all";
   List<HistoryEntry> _history = [];
   MediaItem? _selectedMedia;
   List<MediaItem> _relatedMedia = [];
@@ -473,6 +474,30 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
                     onPressed: () => _run(_searchLibrary),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: "all", label: Text("全部")),
+                      ButtonSegment(value: "continue", label: Text("续播")),
+                      ButtonSegment(value: "unwatched", label: Text("未看")),
+                      ButtonSegment(value: "watched", label: Text("已看")),
+                      ButtonSegment(value: "favorite", label: Text("收藏")),
+                    ],
+                    selected: {_libraryFilter},
+                    onSelectionChanged: (values) {
+                      final next = values.first;
+                      if (next == _libraryFilter) return;
+                      setState(() => _libraryFilter = next);
+                      _run(_searchLibrary);
+                    },
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               Align(
@@ -1188,6 +1213,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
       _systemStatus = null;
       _downloads = [];
       _library = [];
+      _libraryFilter = "all";
       _history = [];
       _selectedMedia = null;
       _relatedMedia = [];
@@ -1306,6 +1332,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
       _discoverLibraryMatches = [];
       _downloads = [];
       _library = [];
+      _libraryFilter = "all";
       _history = [];
       _selectedMedia = null;
       _session = null;
@@ -1779,7 +1806,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
   }
 
   Future<void> _loadLibrary() async {
-    final result = await _api.libraryItems();
+    final result = await _api.libraryItems(status: _libraryFilter);
     setState(
       () => _library = listOf(result["items"]).map(MediaItem.fromJson).toList(),
     );
@@ -1809,7 +1836,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
       return;
     }
 
-    final result = await _api.librarySearch(query);
+    final result = await _api.librarySearch(query, status: _libraryFilter);
     setState(
       () => _library = listOf(result["items"]).map(MediaItem.fromJson).toList(),
     );
@@ -2088,8 +2115,13 @@ class CluoApi {
   Future<Map<String, dynamic>> runDownloadImportAutomation() =>
       post("/api/automation/download-import/run", null);
 
-  Future<Map<String, dynamic>> libraryItems({int limit = 100}) =>
-      get("/api/library/items?limit=$limit");
+  Future<Map<String, dynamic>> libraryItems({
+    int limit = 100,
+    String status = "all",
+  }) =>
+      get(
+        "/api/library/items?limit=$limit&status=${Uri.encodeQueryComponent(status)}",
+      );
 
   Future<Map<String, dynamic>> syncJellyfinLibrary({
     String? searchTerm,
@@ -2100,8 +2132,12 @@ class CluoApi {
         "scan": scan,
       });
 
-  Future<Map<String, dynamic>> librarySearch(String query) => get(
-        "/api/library/search?q=${Uri.encodeQueryComponent(query)}",
+  Future<Map<String, dynamic>> librarySearch(
+    String query, {
+    String status = "all",
+  }) =>
+      get(
+        "/api/library/search?q=${Uri.encodeQueryComponent(query)}&status=${Uri.encodeQueryComponent(status)}",
       );
 
   Future<Map<String, dynamic>> mediaDetail(String itemId) => get(

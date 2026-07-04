@@ -98,6 +98,13 @@ void main() {
             .id,
         media.id,
       );
+      expect(
+        MediaItem.fromJson(
+                listOf((await api.libraryItems(status: "favorite"))["items"])
+                    .first)
+            .id,
+        media.id,
+      );
       final jellyfinSync = await api.syncJellyfinLibrary(
         searchTerm: "迷宫 饭",
         scan: true,
@@ -107,6 +114,13 @@ void main() {
       expect(
         MediaItem.fromJson(
                 listOf((await api.librarySearch("迷宫 饭"))["items"]).first)
+            .id,
+        media.id,
+      );
+      expect(
+        MediaItem.fromJson(listOf((await api.librarySearch("迷宫 饭",
+                    status: "watched"))["items"])
+                .first)
             .id,
         media.id,
       );
@@ -167,6 +181,13 @@ void main() {
       expect(seen, contains("POST /api/downloads/task%201/pause"));
       expect(seen, contains("POST /api/downloads/import-completed"));
       expect(seen, contains("POST /api/automation/download-import/run"));
+      expect(seen, contains("GET /api/library/items?limit=100&status=all"));
+      expect(
+          seen, contains("GET /api/library/items?limit=100&status=favorite"));
+      expect(
+          seen,
+          contains(
+              "GET /api/library/search?q=%E8%BF%B7%E5%AE%AB+%E9%A5%AD&status=watched"));
       expect(seen, contains("POST /api/library/sync/jellyfin"));
       expect(
           seen, contains("GET /api/library/items/media%201/related?limit=8"));
@@ -390,6 +411,8 @@ Future<void> _handleContractRequest(
 
   if (request.method == "GET" && request.uri.path == "/api/library/items") {
     expect(request.uri.queryParameters["limit"], "100");
+    expect(
+        ["all", "favorite"], contains(request.uri.queryParameters["status"]));
     await _writeJson(request, {
       "items": [_mediaItem()]
     });
@@ -411,6 +434,7 @@ Future<void> _handleContractRequest(
 
   if (request.method == "GET" && request.uri.path == "/api/library/search") {
     expect(request.uri.queryParameters["q"], "迷宫 饭");
+    expect(["all", "watched"], contains(request.uri.queryParameters["status"]));
     await _writeJson(request, {
       "items": [_mediaItem()]
     });
