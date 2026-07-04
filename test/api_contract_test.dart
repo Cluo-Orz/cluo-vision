@@ -39,6 +39,12 @@ void main() {
       final login = await api.login(username: "owner", password: "change-me");
       api.token = stringValue(login["token"]);
 
+      final sources = listOf((await api.discoverSources())["items"])
+          .map(DiscoverSource.fromJson)
+          .toList();
+      expect(sources.first.id, "jellyfin-library");
+      expect(sources.first.available, isTrue);
+
       final discover = await api.discoverSearch("迷宫 饭");
       final anime = AnimeSearchResult.fromJson(listOf(discover["anime"]).first);
       expect(anime.title, "迷宫饭");
@@ -149,6 +155,7 @@ void main() {
           seen,
           contains(
               "GET /api/discover/search?q=%E8%BF%B7%E5%AE%AB+%E9%A5%AD&limit=12"));
+      expect(seen, contains("GET /api/discover/sources"));
       expect(seen, contains("POST /api/downloads/task%201/pause"));
       expect(seen, contains("POST /api/downloads/import-completed"));
       expect(seen, contains("POST /api/automation/download-import/run"));
@@ -200,6 +207,27 @@ Future<void> _handleContractRequest(
   }
 
   _expectAuth(request);
+
+  if (request.method == "GET" && request.uri.path == "/api/discover/sources") {
+    await _writeJson(request, {
+      "items": [
+        {
+          "id": "jellyfin-library",
+          "label": "Jellyfin 媒体库",
+          "kind": "library",
+          "configured": true,
+          "available": true,
+          "status": "ready",
+          "description": "已接入 Jellyfin",
+          "provider": "jellyfin",
+          "baseUrl": "http://127.0.0.1:8096",
+          "tags": ["媒体库", "海报墙"],
+          "requiredFor": ["library", "playback"],
+        },
+      ],
+    });
+    return;
+  }
 
   if (request.method == "GET" && request.uri.path == "/api/discover/search") {
     expect(request.uri.queryParameters["q"], "迷宫 饭");

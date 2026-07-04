@@ -77,6 +77,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
   List<AnimeSubscription> _animeSubscriptions = [];
   List<AnimeRule> _animeRules = [];
   bool _animeRulesConfigured = false;
+  List<DiscoverSource> _discoverSources = [];
   List<SearchHistoryEntry> _discoverHistory = [];
   List<MediaItem> _discoverLibraryMatches = [];
   List<DownloadTask> _downloads = [];
@@ -355,6 +356,10 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
           ],
         ),
         const SizedBox(height: 16),
+        if (_discoverSources.isNotEmpty) ...[
+          _DiscoverSourcesRail(sources: _discoverSources),
+          const SizedBox(height: 16),
+        ],
         if (_discoverHistory.isNotEmpty) ...[
           _SearchHistoryBar(
             items: _discoverHistory,
@@ -1142,6 +1147,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
       _animeSubscriptions = [];
       _animeRules = [];
       _animeRulesConfigured = false;
+      _discoverSources = [];
       _discoverHistory = [];
       _discoverLibraryMatches = [];
       _home = null;
@@ -1279,6 +1285,7 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
     await Future.wait([
       _loadSettings(),
       _loadSystemStatus(),
+      _loadDiscoverSources(),
       _loadAnimeTracking(),
       _loadDiscoverHistory(),
       _loadHome(),
@@ -1398,7 +1405,11 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
     };
 
     await _api.saveServiceSettings(body);
-    await Future.wait([_loadSettings(), _loadSystemStatus()]);
+    await Future.wait([
+      _loadSettings(),
+      _loadSystemStatus(),
+      _loadDiscoverSources(),
+    ]);
     setState(() => _status = "配置已保存");
   }
 
@@ -1436,7 +1447,11 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
     );
     final user = asMap(result["user"]);
     _jellyfinPasswordController.text = "";
-    await Future.wait([_loadSettings(), _loadSystemStatus()]);
+    await Future.wait([
+      _loadSettings(),
+      _loadSystemStatus(),
+      _loadDiscoverSources(),
+    ]);
     setState(() => _status = "Jellyfin 已登录：${stringValue(user["name"])}");
   }
 
@@ -1484,6 +1499,15 @@ class _CluoAppState extends State<CluoApp> with WidgetsBindingObserver {
       () => _discoverHistory = listOf(
         result["items"],
       ).map(SearchHistoryEntry.fromJson).toList(),
+    );
+  }
+
+  Future<void> _loadDiscoverSources() async {
+    final result = await _api.discoverSources();
+    setState(
+      () => _discoverSources = listOf(
+        result["items"],
+      ).map(DiscoverSource.fromJson).toList(),
     );
   }
 
@@ -1929,6 +1953,9 @@ class CluoApi {
 
   Future<Map<String, dynamic>> discoverRecent() => get("/api/discover/recent");
 
+  Future<Map<String, dynamic>> discoverSources() =>
+      get("/api/discover/sources");
+
   Future<Map<String, dynamic>> animeSubscriptions() =>
       get("/api/anime/subscriptions");
 
@@ -2185,6 +2212,50 @@ class ContinueItem {
   final double progress;
   final String source;
   final String? posterUrl;
+}
+
+class DiscoverSource {
+  DiscoverSource({
+    required this.id,
+    required this.label,
+    required this.kind,
+    required this.configured,
+    required this.available,
+    required this.status,
+    required this.description,
+    required this.tags,
+    required this.requiredFor,
+    this.provider,
+    this.baseUrl,
+  });
+
+  factory DiscoverSource.fromJson(Map<String, dynamic> json) {
+    return DiscoverSource(
+      id: stringValue(json["id"]),
+      label: stringValue(json["label"]),
+      kind: stringValue(json["kind"], fallback: "fallback"),
+      configured: boolValue(json["configured"]),
+      available: boolValue(json["available"]),
+      status: stringValue(json["status"], fallback: "needs-config"),
+      description: stringValue(json["description"]),
+      tags: listOfStrings(json["tags"]),
+      requiredFor: listOfStrings(json["requiredFor"]),
+      provider: nullableString(json["provider"]),
+      baseUrl: nullableString(json["baseUrl"]),
+    );
+  }
+
+  final String id;
+  final String label;
+  final String kind;
+  final bool configured;
+  final bool available;
+  final String status;
+  final String description;
+  final List<String> tags;
+  final List<String> requiredFor;
+  final String? provider;
+  final String? baseUrl;
 }
 
 class SearchHistoryEntry {
@@ -2895,6 +2966,86 @@ class _SectionTitle extends StatelessWidget {
           Text(title, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(width: 12),
           Text(trailing, style: const TextStyle(color: Color(0xff9fb3b7))),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscoverSourcesRail extends StatelessWidget {
+  const _DiscoverSourcesRail({required this.sources});
+
+  final List<DiscoverSource> sources;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 128,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: sources.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, index) => _DiscoverSourceCard(
+          source: sources[index],
+        ),
+      ),
+    );
+  }
+}
+
+class _DiscoverSourceCard extends StatelessWidget {
+  const _DiscoverSourceCard({required this.source});
+
+  final DiscoverSource source;
+
+  @override
+  Widget build(BuildContext context) {
+    final tags = source.tags.take(3).join(" · ");
+    return Container(
+      width: 260,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xff172023),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: source.available
+              ? const Color(0xff2f6f68)
+              : const Color(0xff3a464a),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  source.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _StatePill(state: source.status),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            tags.isEmpty ? source.kind : tags,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xff9fb3b7), fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            source.description,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, height: 1.25),
+          ),
         ],
       ),
     );

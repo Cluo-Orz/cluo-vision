@@ -271,4 +271,24 @@ void main() {
     expect(entry.libraryCount, 1);
     expect(entry.animeCount, 3);
   });
+
+  test("DiscoverSource parses connected source capabilities", () {
+    final source = DiscoverSource.fromJson({
+      "id": "autobangumi-anime",
+      "label": "AutoBangumi 番剧",
+      "kind": "anime",
+      "configured": false,
+      "available": false,
+      "status": "needs-config",
+      "description": "配置 AutoBangumi 后可搜索番剧",
+      "provider": "mikan",
+      "tags": ["番剧", "RSS", "mikan"],
+      "requiredFor": ["anime-search", "anime-subscribe"],
+    });
+
+    expect(source.id, "autobangumi-anime");
+    expect(source.status, "needs-config");
+    expect(source.available, isFalse);
+    expect(source.tags, contains("mikan"));
+  });
 }
